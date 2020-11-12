@@ -264,6 +264,8 @@ class MecRobot():
                                         try:
                                             response = requests.get(endpoint)
                                             lineError = float(response.text)
+                                            if lineError < -1:
+                                                followLine = False # stop
                                         except:
                                             print("No response")
                                             pass

@@ -31,7 +31,7 @@ def findLine(videoImage):
         hEnd , wEnd =videoImage.shape # get image width and height, processing starts at (0,0)
         tstart = time.time()
         lineCentre = -wEnd
-        edges = np.zeros(shape=(hEnd ,wEnd)) # so numpy flips the index so an image (320 by 240) is stored in an array (240 by 320)
+        #edges = np.zeros(shape=(hEnd ,wEnd)) # so numpy flips the index so an image (320 by 240) is stored in an array (240 by 320)
         mod = np.zeros(shape=(hEnd ,wEnd))	
 
         minLevel = np.min(videoImage,1) # find min and max levels of each row
@@ -47,7 +47,7 @@ def findLine(videoImage):
             for col in range(wEnd):
             # now normalise if diff is not zero
                 if diff !=0:
-                    pixel = int((videoImage[row,col] - minLevel[row])*255/diff)
+                    pixel = int((videoImage[row,col] - minLevel[row])*255/diff) # normalise pixel
                 else:
                     pixel = 0
                 if pixel < 128: # if we are looking for a white line on a black background, test should be  > 128?
@@ -56,22 +56,20 @@ def findLine(videoImage):
                     mod[row,col] = 0
                 if col > 0:
                         edge = abs(mod[row,col] - mod[row,col-1])
-                        edges[row,col] = edge
+                        #edges[row,col] = edge
+                        #print(row,col,edge)
                         if edge >0 : # if it is an edge store it in list
                                 edgep.append([row,col])
                         if len(edgep) == 2: # if on this row two edges have been found assume we have the line
-                                '''
-                                lineWidth = edgep[1][1]- edgep[0][1]
-                                # this would need calibrating but my masking tape is 160 pixels wide for 2cm width
-                        
-                                if lineWidth > 50: 
-                                        lineCentre = edgep[0][1]  + lineWidth /2
-                                        lineFound = True
-                                        #if row + 4 < hEnd:
-                                        #    edges[row:row+4, edgep[0][1]:edgep[1][1] ] = 250
-                                        break
-                                '''
                                 return [ edgep[0][1], edgep[1][1] ]
+		            # if we get here then no edge has been found, but maybe the start has been found
+            if len(edgep) ==1:
+                # we have a start
+                #print("start found at ", row,col,mod[row,col],edgep)
+		# this logic detects a right turn, i.e. a line starts at edgep[0][1] and continues to the right
+		#but the turn is not sharp enough, if we are following the line, then the left edge will be to the left of
+		# the line, and typically the error is then of the order of 0.25, need to flag a sharp turn?
+                return [ edgep[0][1], col]
 		    
             row+=1
         tdif = time.time() - tstart # use to monitor cycle time
@@ -85,18 +83,19 @@ def index():
 	# return the rendered template
 	return render_template("index.html")
 
-def processImage():
+def processImage(h=240,w=320,hStart=200,hEnd=240,width=200):
 	# grab global references to the video stream, output frame, and
 	# lock variables
 	global vs, outputFrame, lock, lineError
 	# loop over frames from the video stream
-	h = 240
-	w = 320
-	hStart = 200
-	hEnd = 240
+	# currently using masking tape which has a width of 100 pixels 40 pixels from bottom of the image
+	
 	hw = hEnd - hStart
-	wStart = 20
-	wEnd = 300
+	# lets set width of image to be processed
+	
+	wStart =  int((w - width ) /2)#20
+	wEnd =  int((w + width ) /2)#300
+	print(width, wStart, wEnd)
 	ww = wEnd - wStart
 	edges = np.zeros(shape=(hw ,ww)) # so numpy flips the index so an image (320 by 240) is stored in an array (240 by 320)
 	mod = np.zeros(shape=(hw ,ww))		
@@ -107,18 +106,22 @@ def processImage():
                 yChan = frame[hStart:hEnd,wStart:wEnd,0].copy() # extract a small area of the Y channel
                 [ leftEdge, rightEdge] = findLine(yChan)
                 # leftEdge and rightEdge are relative to the small window so need to add wStart to each one
-		# because this added to each and then averaged, just add once below
-                lineCentre = wStart + ( leftEdge + rightEdge ) /2
-                lineError  =  ( 2 * lineCentre / ww ) - 1# ww is window width, so normalise to between + and - 1
-                # blank out bottom part of image and draw lines for debug
-                #frame[hStart:hEnd,wStart:wEnd,0] = np.zeros(shape=(hw, ww))
-                #frame[hStart:hEnd,wStart:wEnd,1] = np.zeros(shape=(hw, ww))
-                #frame[hStart:hEnd,wStart:wEnd,2] = np.zeros(shape=(hw, ww))	# clear out background	
-                #frame[hStart:hEnd,wStart:wStart+280,1] = edges[:,:]# draw where edges are detected at top of screen
-                frame[hStart-20:hEnd-20,int(lineCentre), 1] =250# draw vertical line on line centre
-                frame[110:hEnd, int(w/2), 1] = 250
+		# because this added to each and then averaged, just add once
+                #print(leftEdge,rightEdge)
+                if rightEdge != leftEdge :
+                        lineCentre = wStart + ( leftEdge + rightEdge ) /2 # so this is now relative to full screen width
+                        lineError  =  ( 2 * lineCentre / w ) - 1# w is window width, so normalise to between + and - 1
+                else:
+                        lineCentre = 10
+                        lineError = -2
 
-			##############
+                frame[hStart-20:hEnd-20,int(lineCentre), 1] =250# draw vertical line on line centre
+                frame[110:hEnd, int(w/2), 1] = 250 
+                frame[110:hEnd, wStart, 1] = 250
+                frame[110:hEnd, wEnd, 1] = 250
+
+
+		##############
 		# acquire the lock, set the output frame, and release the
 		# lock
 		
@@ -169,6 +172,29 @@ def getLineError():
 
 # check to see if this is the main thread of execution
 if __name__ == '__main__':
+	import json
+	
+	# load parameters if json file exists
+	try:
+		conf = json.load(open("yuvconf.json"))
+		# camera resolution
+		height = conf["height"]
+		width = conf["width"]
+		# row to start and end processing
+		hStart = conf["hStart"]
+		hEnd = conf["hEnd"]
+		# width relative to centre of frame to process
+		mainWindow = conf["mainWindow"]
+		print("json file loaded")
+	except Exception as e:
+		print(e)
+		height = 240
+		width = 320
+		hStart = 200
+		hEnd = 240
+		mainWindow = 200
+		print("default parameters")
+		
 	# initialize the output frame and a lock used to ensure thread-safe
 	# exchanges of the output frames (useful for multiple browsers/tabs
 	# are viewing tthe stream)
@@ -186,7 +212,7 @@ if __name__ == '__main__':
 	lineError = 0
 
 	# start a thread that will perform motion detection
-	t = threading.Thread(target=processImage, args=())
+	t = threading.Thread(target=processImage, args=(height, width, hStart, hEnd, mainWindow))
 	t.daemon = True
 	t.start()	# start a thread that will perform motion detection
 
