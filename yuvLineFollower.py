@@ -27,55 +27,42 @@ app = Flask(__name__)
 # this finds a line in the centre of the image
 # it assumes that the passed matrix is one colour channel of the captured image
 
-def findLine(videoImage):
-        hEnd , wEnd =videoImage.shape # get image width and height, processing starts at (0,0)
-        tstart = time.time()
-        lineCentre = -wEnd
-        #edges = np.zeros(shape=(hEnd ,wEnd)) # so numpy flips the index so an image (320 by 240) is stored in an array (240 by 320)
-        mod = np.zeros(shape=(hEnd ,wEnd))	
-
-        minLevel = np.min(videoImage,1) # find min and max levels of each row
-        maxLevel = np.max(videoImage,1)
-        # now for each apply adaptive threshold
-        row = 0
-        lineFound = False
-        #for row in range(hEnd):
-        while row < hEnd and not lineFound:
-            # calculate the range for this row
-            diff = maxLevel[row] - minLevel[row]
-            edgep = []  # create an empty list to store edges   
-            for col in range(wEnd):
-            # now normalise if diff is not zero
-                if diff !=0:
-                    pixel = int((videoImage[row,col] - minLevel[row])*255/diff) # normalise pixel
+def findEdges(videoRow):
+    wEnd = len(videoRow)
+    minLevel = np.min(videoRow)
+    maxLevel = np.max(videoRow)
+    diffLevel = maxLevel-minLevel
+    modified = np.zeros(wEnd)
+    startPixel = 0
+    endPixel = 0
+    nValidPixels = 0
+    lineCentres=[]
+    for row in range(wEnd):
+        if diffLevel !=0:
+            pixel = int((videoRow[row] - minLevel)*255/diffLevel)
+            if pixel < 128: # less than 128 means black line > 128 means white
+                modified[row] = 250 # so set black to max level
+                if nValidPixels ==0:
+                    nValidPixels = 1
+                    startPixel = row
                 else:
-                    pixel = 0
-                if pixel < 128: # if we are looking for a white line on a black background, test should be  > 128?
-                    mod[row,col] = 250 
-                else :
-                    mod[row,col] = 0
-                if col > 0:
-                        edge = abs(mod[row,col] - mod[row,col-1])
-                        #edges[row,col] = edge
-                        #print(row,col,edge)
-                        if edge >0 : # if it is an edge store it in list
-                                edgep.append([row,col])
-                        if len(edgep) == 2: # if on this row two edges have been found assume we have the line
-                                return [ edgep[0][1], edgep[1][1] ]
-		            # if we get here then no edge has been found, but maybe the start has been found
-            if len(edgep) ==1:
-                # we have a start
-                #print("start found at ", row,col,mod[row,col],edgep)
-		# this logic detects a right turn, i.e. a line starts at edgep[0][1] and continues to the right
-		#but the turn is not sharp enough, if we are following the line, then the left edge will be to the left of
-		# the line, and typically the error is then of the order of 0.25, need to flag a sharp turn?
-                return [ edgep[0][1], col]
-		    
-            row+=1
-        tdif = time.time() - tstart # use to monitor cycle time
+                    nValidPixels+=1 # copund how many valid pixels we have for line
+            else:
+                if nValidPixels < 3: # not enough consecutive points for line
+                    nValidPixels = 0
+                    startPixel = 0
+                else:
+                    # enough points
+                    endPixel = row
+                    lineCentres.append((startPixel+endPixel)/2)
+                    nValidPixels = 0
+                    startPixel = 0
 
-        return [0, 0]
-        
+    # what if start detected and goes across all of video
+    if nValidPixels > 3 :
+        lineCentres.append((startPixel+row)/2)
+
+    return lineCentres
 
 
 @app.route("/")
@@ -90,46 +77,62 @@ def processImage(h=240,w=320,hStart=200,hEnd=240,width=200):
 	# loop over frames from the video stream
 	# currently using masking tape which has a width of 100 pixels 40 pixels from bottom of the image
 	
+	rows2Process = [120, 160, 200]
 	hw = hEnd - hStart
 	# lets set width of image to be processed
-	
+	wCentre = w/2
 	wStart =  int((w - width ) /2)#20
 	wEnd =  int((w + width ) /2)#300
-	print(width, wStart, wEnd)
 	ww = wEnd - wStart
 	edges = np.zeros(shape=(hw ,ww)) # so numpy flips the index so an image (320 by 240) is stored in an array (240 by 320)
-	mod = np.zeros(shape=(hw ,ww))		
-	while True:
-                startTime = time.time()
-                frame = vs.read()
-                ##############
-                yChan = frame[hStart:hEnd,wStart:wEnd,0].copy() # extract a small area of the Y channel
-                [ leftEdge, rightEdge] = findLine(yChan)
-                # leftEdge and rightEdge are relative to the small window so need to add wStart to each one
-		# because this added to each and then averaged, just add once
-                #print(leftEdge,rightEdge)
-                if  rightEdge - leftEdge > 80: #rightEdge != leftEdge :
-                        lineCentre = wStart + ( leftEdge + rightEdge ) /2 # so this is now relative to full screen width
-                        lineError  =  ( 2 * lineCentre / w ) - 1# w is window width, so normalise to between + and - 1
-                else:
-                        lineCentre = 10
-                        lineError = -2
-
-                frame[hStart-20:hEnd-20,int(lineCentre), 1] =250# draw vertical line on line centre
-                frame[110:hEnd, int(w/2), 1] = 250 
-                frame[110:hEnd, wStart, 1] = 250
-                frame[110:hEnd, wEnd, 1] = 250
+	mod = np.zeros(shape=(hw ,ww))  
+	letsGo = True    
+	crossHeight = 20
+	threshold = 50
+	while letsGo:
+		startTime = time.time()
+		frame = vs.read()
+		leftTurn = 0 # variables to indicate what has been detected
+		centre = 0
+		rightTurn = 0
+		nCentres = 0
+		##############
+		for row in rows2Process:
+			processRow = frame[row,wStart:wEnd,0].copy()
+			lineCentres = findEdges(processRow)
+			nFoundLines = len(lineCentres)
+			if nFoundLines == 1: # only one valid centre so assume line
+				centre += lineCentres[0]
+				nCentres+=1
+				adj = int(lineCentres[0] + wStart)
+				frame[row-crossHeight:row+crossHeight, adj, 1] = 250
+			elif nFoundLines > 1:
+				# now need to discard lines
+				for lc in lineCentres:
+					adjust = int(lc + wStart)
+					frame[row-crossHeight:row+crossHeight, adjust, 1] = 250
+					if abs (adjust - wCentre) < threshold:
+						centre +=lc
+						nCentres+=1
+		if nCentres >0:
+			lineCentre =  wStart + (centre / nCentres)
+			lineError = 2 * lineCentre / width - 1
+		else:
+			lineError = -10
+			
+		#print (lineCentre, lineError, 1.0 / (time.time()-startTime))
+		frame[row,wStart:wEnd,1] = 250
 
 
 		##############
 		# acquire the lock, set the output frame, and release the
 		# lock
 		
-                with lock:
+		with lock:
                         outputFrame = frame.copy()	
 		
-                loopTime = int( ( time.time()- startTime) * 1000)
-                #print(loopTime)	
+		loopTime = int( ( time.time()- startTime) * 1000)
+		#print(loopTime)	
         
 
 		
