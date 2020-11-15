@@ -108,7 +108,7 @@ def processImage(h=240,w=320,hStart=200,hEnd=240,width=200):
                 # leftEdge and rightEdge are relative to the small window so need to add wStart to each one
 		# because this added to each and then averaged, just add once
                 #print(leftEdge,rightEdge)
-                if rightEdge != leftEdge :
+                if  rightEdge - leftEdge > 80: #rightEdge != leftEdge :
                         lineCentre = wStart + ( leftEdge + rightEdge ) /2 # so this is now relative to full screen width
                         lineError  =  ( 2 * lineCentre / w ) - 1# w is window width, so normalise to between + and - 1
                 else:
