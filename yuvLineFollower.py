@@ -25,44 +25,42 @@ global vs, outputFrame, lock, lineError
 app = Flask(__name__)
 
 # this finds a line in the centre of the image
-# it assumes that the passed matrix is one colour channel of the captured image
+# it assumes that the passed matrix is one row of one channel of the captured image
 
 def findEdges(videoRow):
-    wEnd = len(videoRow)
-    minLevel = np.min(videoRow)
-    maxLevel = np.max(videoRow)
-    diffLevel = maxLevel-minLevel
-    modified = np.zeros(wEnd)
-    startPixel = 0
-    endPixel = 0
-    nValidPixels = 0
-    lineCentres=[]
-    for row in range(wEnd):
-        if diffLevel !=0:
-            pixel = int((videoRow[row] - minLevel)*255/diffLevel)
-            if pixel < 128: # less than 128 means black line > 128 means white
-                modified[row] = 250 # so set black to max level
-                if nValidPixels ==0:
-                    nValidPixels = 1
-                    startPixel = row
-                else:
-                    nValidPixels+=1 # copund how many valid pixels we have for line
-            else:
-                if nValidPixels < 3: # not enough consecutive points for line
-                    nValidPixels = 0
-                    startPixel = 0
-                else:
-                    # enough points
-                    endPixel = row
-                    lineCentres.append((startPixel+endPixel)/2)
-                    nValidPixels = 0
-                    startPixel = 0
+	wEnd = len(videoRow)
+	
+	modified = np.zeros(wEnd)
+	startPixel = 0
+	endPixel = 0
+	nValidPixels = 0
+	lineCentres=[]
+	pixels4ValidLine = 10
+	for row in range(wEnd):
+		pixel = videoRow[row]
+		if pixel < 75: # less than 128 means black line > 128 means white
+			modified[row] = 250 # so set black to max level
+			if nValidPixels ==0:
+				nValidPixels = 1
+				startPixel = row
+			else:
+				nValidPixels+=1 # copund how many valid pixels we have for line
+		else:
+			if nValidPixels < pixels4ValidLine: # not enough consecutive points for line
+				nValidPixels = 0
+				startPixel = 0
+			else:
+				# enough points
+				endPixel = row
+				lineCentres.append((startPixel+endPixel)/2)
+				nValidPixels = 0
+				startPixel = 0
 
-    # what if start detected and goes across all of video
-    if nValidPixels > 3 :
-        lineCentres.append((startPixel+row)/2)
-
-    return lineCentres
+	# what if start detected and goes across all of video
+	if nValidPixels > pixels4ValidLine :
+		lineCentres.append((startPixel+row)/2)
+	
+	return lineCentres
 
 
 @app.route("/")
@@ -70,6 +68,14 @@ def index():
 	# return the rendered template
 	return render_template("index.html")
 
+def recentreWindow(lineCentre, oldOffset):
+	offset = oldOffset
+	if lineCentre < 40 and oldOffset > -80:
+		offset -= 10
+	elif lineCentre > 80 and oldOffset < 80:
+		offset += +10
+	return offset
+	
 def processImage(h=240,w=320,hStart=200,hEnd=240,width=200):
 	# grab global references to the video stream, output frame, and
 	# lock variables
@@ -77,15 +83,13 @@ def processImage(h=240,w=320,hStart=200,hEnd=240,width=200):
 	# loop over frames from the video stream
 	# currently using masking tape which has a width of 100 pixels 40 pixels from bottom of the image
 	
-	rows2Process = [120, 160, 200]
-	hw = hEnd - hStart
 	# lets set width of image to be processed
-	wCentre = w/2
-	wStart =  int((w - width ) /2)#20
-	wEnd =  int((w + width ) /2)#300
-	ww = wEnd - wStart
-	edges = np.zeros(shape=(hw ,ww)) # so numpy flips the index so an image (320 by 240) is stored in an array (240 by 320)
-	mod = np.zeros(shape=(hw ,ww))  
+	wCentre = int(w/2)
+	
+	
+	rows2Process = [160,180,200,220]
+	nrows2Process = len(rows2Process)
+	windowOffsets = [0, 0, 0, 0] # initialise to zero
 	letsGo = True    
 	crossHeight = 20
 	threshold = 50
@@ -96,32 +100,54 @@ def processImage(h=240,w=320,hStart=200,hEnd=240,width=200):
 		centre = 0
 		rightTurn = 0
 		nCentres = 0
+		
 		##############
-		for row in rows2Process:
-			processRow = frame[row,wStart:wEnd,0].copy()
+		for index in range(nrows2Process):
+			row = rows2Process[index]
+			#print("row ", row, windowOffsets[index])
+			rStart = int(wCentre + windowOffsets[index]- 60)
+			rEnd = int(wCentre + windowOffsets[index] + 60)
+			
+			processRow = frame[row,rStart : rEnd ,0].copy()
 			lineCentres = findEdges(processRow)
+			
+			#print(lineCentres)
+			
 			nFoundLines = len(lineCentres)
 			if nFoundLines == 1: # only one valid centre so assume line
-				centre += lineCentres[0]
+				#centre += lineCentres[0]
 				nCentres+=1
-				adj = int(lineCentres[0] + wStart)
-				frame[row-crossHeight:row+crossHeight, adj, 1] = 250
+				adj = int(lineCentres[0] + rStart)
+				centre += adj # because rstart is now adaptable need to adjust each centre
+				#print("row adjusted ", row,adj)
+				frame[row-crossHeight:row+crossHeight, adj, 1] = 250 # vertical line on centre
+				windowOffsets[index] = recentreWindow(lineCentres[0], windowOffsets[index])
 			elif nFoundLines > 1:
 				# now need to discard lines
 				for lc in lineCentres:
-					adjust = int(lc + wStart)
-					frame[row-crossHeight:row+crossHeight, adjust, 1] = 250
+					adjust = int(lc + rStart)
+					#print(int(wCentre-threshold))
+					frame[row-crossHeight:row+crossHeight, adjust, 1] = 250 # vertical line on centre
 					if abs (adjust - wCentre) < threshold:
-						centre +=lc
+						centre +=adjust
 						nCentres+=1
+						windowOffsets[index] = recentreWindow(lc, windowOffsets[index])
+						#frame[row-crossHeight:row+crossHeight, adjust, 2] = 250
+						#frame[row-crossHeight:row+crossHeight, adjust, 0] = 250
+			frame[row,rStart : rEnd,1] = 250 # draw line to show area that has been processed
+			
 		if nCentres >0:
-			lineCentre =  wStart + (centre / nCentres)
+			lineCentre = (centre / nCentres)
 			lineError = 2 * lineCentre / width - 1
+			#frame [:, int(lineCentre), 0 ] = 250 #this line seems to screw everything up!
+			#print(rStart, centre, nCentres, width, lineError)
 		else:
 			lineError = -10
 			
+		frame [:, wCentre, 1 ] = 250
+		#time.sleep(10)
 		#print (lineCentre, lineError, 1.0 / (time.time()-startTime))
-		frame[row,wStart:wEnd,1] = 250
+		
 
 
 		##############

@@ -29,10 +29,10 @@ controller has following controls
 'buttons': 
    ['circle', toggle line following mode
    'cross', switch between normal and meccanum mode
-   'ddown', UNUSED
+   'ddown', line follow gain
    'dleft', left in meccanum mode
    'dright', right in meccanum mode
-   'dup', UNUSED
+   'dup', line follow gain
    'home', labelled analog stops program
    'l1', diagonal left in meccanum mode
    'ls', ?
@@ -74,8 +74,12 @@ class MecRobot():
        
     
         # If one wants to see the 'raw' 0-100 values coming in
-        # print("source left: {}".format(power_left))
-        # print("source right: {}".format(power_right))
+        '''
+        if power_left !=0:
+            print("source left: {}".format(power_left))
+        if power_right !=0:
+            print("source right: {}".format(power_right))
+        '''
     
         # Take the 0-100 inputs down to 0-1 and reverse them if necessary
         power_left = (self.motor_multiplier * power_left) / 100
@@ -200,6 +204,7 @@ class MecRobot():
                         # RobotStopException
                         while joystick.connected:                       
                             tstart = time.time()
+                            
                             joystick.check_presses()
                             # Print out any buttons that were pressed, if we had any
                             if joystick.has_presses:
@@ -244,6 +249,7 @@ class MecRobot():
                                     lineFollowGain = 1.0
                                 print(lineFollowGain)
                             
+                            
                             # now process command
                             
                             if normalMode:
@@ -261,25 +267,48 @@ class MecRobot():
                                     endpoint = 'http://127.0.0.1:8000/lineError'
                                     lineError = 0.0
                                     if time.time() > time2UpdateLineError:
+                                                                            
+                                        try:
+                                            if joystick['l1'] > 1.0:
+                                                lineFollowSpeed-=0.1
+                                                if lineFollowSpeed < 0.2:
+                                                    lineFollowSpeed = 0.2
+                                                print(lineFollowSpeed)
+                                        except:
+                                            # joystick['l1'] returns None if not pressed
+                                            pass
+                                        try:
+                                            if joystick['r1'] > 1.0:
+                                                lineFollowSpeed+=0.1
+                                                if lineFollowSpeed > 1.0:
+                                                    lineFollowSpeed = 1.0
+                                                print(lineFollowSpeed)
+                                        except:
+                                            # joystick['l1'] returns None if not pressed
+                                            pass
+                                        
                                         try:
                                             response = requests.get(endpoint)
                                             lineError = float(response.text)
+                                            throttle = lineFollowSpeed
                                             if lineError < -1:
-                                                followLine = False # stop
+                                                followLine =not followLine #throttle = 0 # stop
                                         except:
                                             print("No response")
+                                            throttle = 0
                                             pass
                                         time2UpdateLineError = time.time() + 0.1 # only get line error at 10Hz
                                         if abs(lineError) > errorThreshold:
                                             yaw = lineError  * lineFollowGain
-                                            print(yaw)
+                                            
                                         else:
                                             # now set speeds wants demand sabetween 0 and 100, lineFollowSpeed is between 0 and 1
                                             # so multiply by 100
                                             #forwardSpeed = lineFollowSpeed * 100
                                             yaw = 0
-                                            print("F")
-                                        power_left, power_right = self.mixer(yaw, throttle=1.0)
+                                            #print("F")
+                                        power_left, power_right = self.mixer(yaw, throttle)
+                                        #print(yaw,power_left,power_right)
                                         self.set_speeds(power_left, power_right)
                                         #print(lineError,diagSpeed, lineFollowGain)
                             else:
