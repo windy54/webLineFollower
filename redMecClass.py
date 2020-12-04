@@ -216,8 +216,8 @@ class RobotLoop():
                             tstart = time.time()
                             joystick.check_presses()
                             # Print out any buttons that were pressed, if we had any
-                            if joystick.has_presses:
-                                print(joystick.presses)
+                            #if joystick.has_presses:
+                            #    print(joystick.presses)
                             # If home was pressed, raise a RobotStopException to bail out of the loop
                             # Home is generally the PS button for playstation controllers, XBox for XBox etc
                             if 'home' in joystick.presses:
@@ -267,16 +267,16 @@ class RobotLoop():
                                     except:
                                         print("No response")
                                         pass
-                                    time2UpdateLineError = time.time() + 0.1 # only get line error at 10Hz
+                                    time2UpdateLineError = time.time() + 0.05 #0.1 # only get line error at 10Hz
                                     if abs(lineError) > errorThreshold:
                                         yaw = lineError  * lineFollowGain
-                                        print(yaw)
+                                        #print(yaw)
                                     else:
                                         # now set speeds wants demand sabetween 0 and 100, lineFollowSpeed is between 0 and 1
                                         # so multiply by 100
                                         #forwardSpeed = lineFollowSpeed * 100
                                         yaw = 0
-                                        print("F")
+                                        #print("F")
                                     power_left, power_right = self.mixer(yaw, throttle=1.0)
                                     self.robot.set_speeds(power_left, power_right)
                                     #print(lineError,diagSpeed, lineFollowGain)
