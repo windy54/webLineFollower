@@ -70,9 +70,9 @@ def index():
 
 def recentreWindow(lineCentre, oldOffset):
 	offset = oldOffset
-	if lineCentre < 40 and oldOffset > -80:
+	if lineCentre < 40 and oldOffset > 10:
 		offset -= 10
-	elif lineCentre > 80 and oldOffset < 80:
+	elif lineCentre > 80 and oldOffset < 200:  # really needs a variable w - window2Process
 		offset += +10
 	return offset
 	
@@ -85,11 +85,10 @@ def processImage(h=240,w=320,hStart=200,hEnd=240,width=200):
 	
 	# lets set width of image to be processed
 	wCentre = int(w/2)
-	
-	
 	rows2Process = [160,180,200,220]
 	nrows2Process = len(rows2Process)
-	windowOffsets = [0, 0, 0, 0] # initialise to zero
+	window2Process = 120
+	rStart = [int(wCentre - window2Process/2)] * nrows2Process 
 	letsGo = True    
 	crossHeight = 20
 	threshold = 50
@@ -104,37 +103,33 @@ def processImage(h=240,w=320,hStart=200,hEnd=240,width=200):
 		##############
 		for index in range(nrows2Process):
 			row = rows2Process[index]
-			#print("row ", row, windowOffsets[index])
-			rStart = int(wCentre + windowOffsets[index]- 60)
-			rEnd = int(wCentre + windowOffsets[index] + 60)
 			
-			processRow = frame[row,rStart : rEnd ,0].copy()
+			rEnd = rStart[index] + window2Process
+			
+			processRow = frame[row,rStart[index] : rEnd ,0].copy()
 			lineCentres = findEdges(processRow)
 			
 			#print(lineCentres)
 			
 			nFoundLines = len(lineCentres)
 			if nFoundLines == 1: # only one valid centre so assume line
-				#centre += lineCentres[0]
 				nCentres+=1
-				adj = int(lineCentres[0] + rStart)
+				adj = int(lineCentres[0] + rStart[index])
 				centre += adj # because rstart is now adaptable need to adjust each centre
-				#print("row adjusted ", row,adj)
 				frame[row-crossHeight:row+crossHeight, adj, 1] = 250 # vertical line on centre
-				windowOffsets[index] = recentreWindow(lineCentres[0], windowOffsets[index])
+				rStart[index] = recentreWindow(lineCentres[0], rStart[index])
 			elif nFoundLines > 1:
 				# now need to discard lines
 				for lc in lineCentres:
-					adjust = int(lc + rStart)
+					adjust = int(lc + rStart[index])
 					#print(int(wCentre-threshold))
 					frame[row-crossHeight:row+crossHeight, adjust, 1] = 250 # vertical line on centre
 					if abs (adjust - wCentre) < threshold:
 						centre +=adjust
 						nCentres+=1
-						windowOffsets[index] = recentreWindow(lc, windowOffsets[index])
-						#frame[row-crossHeight:row+crossHeight, adjust, 2] = 250
-						#frame[row-crossHeight:row+crossHeight, adjust, 0] = 250
-			frame[row,rStart : rEnd,1] = 250 # draw line to show area that has been processed
+						rStart[index] = recentreWindow(lc, rStart[index])
+						
+			frame[row,rStart[index] : rEnd,1] = 250 # draw line to show area that has been processed this will be next
 			
 		if nCentres >0:
 			lineCentre = (centre / nCentres)
