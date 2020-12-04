@@ -19,7 +19,10 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 
-global vs, outputFrame, lock, lineError
+global vs, outputFrame, lock, lineError, minLoop, maxLoop
+minLoop = 10000
+maxLoop = 0
+
 # need to define app at bgining
 # initialize a flask object
 app = Flask(__name__)
@@ -79,7 +82,7 @@ def recentreWindow(lineCentre, oldOffset):
 def processImage(h=240,w=320,hStart=200,hEnd=240,width=200):
 	# grab global references to the video stream, output frame, and
 	# lock variables
-	global vs, outputFrame, lock, lineError
+	global vs, outputFrame, lock, lineError, minLoop, maxLoop
 	# loop over frames from the video stream
 	# currently using masking tape which has a width of 100 pixels 40 pixels from bottom of the image
 	
@@ -153,6 +156,10 @@ def processImage(h=240,w=320,hStart=200,hEnd=240,width=200):
                         outputFrame = frame.copy()	
 		
 		loopTime = int( ( time.time()- startTime) * 1000)
+		if minLoop > loopTime:
+			minLoop = loopTime
+		if maxLoop < loopTime:
+			maxLoop = loopTime
 		#print(loopTime)	
         
 
@@ -192,6 +199,14 @@ def video_feed():
 @app.route('/lineError', methods=['GET'])
 def getLineError():
 	return str(lineError)
+
+@app.route('/minLoopTime', methods=['GET'])
+def getminloopTime():
+	return str(minLoop)
+
+@app.route('/maxLoopTime', methods=['GET'])
+def getmaxloopTime():
+	return str(maxLoop)
 	
 
 # check to see if this is the main thread of execution
