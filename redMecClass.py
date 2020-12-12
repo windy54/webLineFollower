@@ -52,6 +52,7 @@ try:
             """
             # Turn both motors off
             redboard.Stop()
+    robot = redBoardRobot()
 
 except:
     
