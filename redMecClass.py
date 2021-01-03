@@ -278,7 +278,7 @@ class RobotLoop():
                                         #forwardSpeed = lineFollowSpeed * 100
                                         yaw = 0
                                         #print("F")
-                                    power_left, power_right = self.mixer(yaw, throttle=1.0)
+                                    power_left, power_right = self.mixer(yaw, throttle=lineFollowSpeed)
                                     self.robot.set_speeds(power_left, power_right)
                                     #print(lineError,diagSpeed, lineFollowGain)
 
