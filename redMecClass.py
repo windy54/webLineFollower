@@ -263,11 +263,13 @@ class RobotLoop():
                                     try:
                                         response = requests.get(endpoint)
                                         lineError = float(response.text)
-                                        if lineError < -1:
-                                            followLine = False # stop
+                                        
                                     except:
                                         print("No response")
+                                        lineError = -2.0 
                                         pass
+                                    if lineError < -1:
+                                            followLine = False # stop
                                     time2UpdateLineError = time.time() + 0.05 #0.1 # only get line error at 10Hz
                                     if abs(lineError) > errorThreshold:
                                         yaw = lineError  * lineFollowGain
