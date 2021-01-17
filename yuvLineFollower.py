@@ -91,7 +91,8 @@ def processImage(h=240,w=320,hStart=200,hEnd=240,width=200):
 	rows2Process = [160,180,200,220]
 	nrows2Process = len(rows2Process)
 	window2Process = 120
-	rStart = [int(wCentre - window2Process/2)] * nrows2Process 
+	wStartPixel = int(wCentre - window2Process/2)
+	rStart = [wStartPixel] * nrows2Process # create a list of nrow2Process elements
 	letsGo = True    
 	crossHeight = 20
 	threshold = 50
@@ -131,6 +132,8 @@ def processImage(h=240,w=320,hStart=200,hEnd=240,width=200):
 						centre +=adjust
 						nCentres+=1
 						rStart[index] = recentreWindow(lc, rStart[index])
+			else:
+				rStart[index] = wStartPixel # have not found any lines so set to centre of image
 						
 			frame[row,rStart[index] : rEnd,1] = 250 # draw line to show area that has been processed this will be next
 			
@@ -141,6 +144,7 @@ def processImage(h=240,w=320,hStart=200,hEnd=240,width=200):
 			#print(rStart, centre, nCentres, width, lineError)
 		else:
 			lineError = -10
+			
 			
 		frame [:, wCentre, 1 ] = 250
 		#time.sleep(10)
