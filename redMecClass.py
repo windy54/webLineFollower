@@ -137,10 +137,10 @@ controller has following controls
 'buttons': 
    ['circle', toggle line following mode
    'cross', 
-   'ddown', UNUSED
+   'ddown', decrease line follow gain
    'dleft', 
    'dright', 
-   'dup', UNUSED
+   'dup', increase line follow gain
    'home', labelled analog stops program
    'l1', 
    'ls', ?
@@ -149,7 +149,7 @@ controller has following controls
    'select', UNUSED
    'square', 
    'start', shuits down raspberry pi
-   'triangle'  UNUSED
+   'triangle'  increase line follow speed
    ]}
 ['cross']
 
@@ -268,9 +268,12 @@ class RobotLoop():
                                         print("No response")
                                         lineError = -2.0 
                                         pass
+                                    throttle=lineFollowSpeed
                                     if lineError < -1:
-                                            followLine = False # stop
-                                    time2UpdateLineError = time.time() + 0.05 #0.1 # only get line error at 10Hz
+                                            #followLine = False # stop
+                                            throttle = 0
+                                            yaw = 0
+                                    
                                     if abs(lineError) > errorThreshold:
                                         yaw = lineError  * lineFollowGain
                                         #print(yaw)
@@ -280,9 +283,10 @@ class RobotLoop():
                                         #forwardSpeed = lineFollowSpeed * 100
                                         yaw = 0
                                         #print("F")
-                                    power_left, power_right = self.mixer(yaw, throttle=lineFollowSpeed)
+                                    power_left, power_right = self.mixer(yaw,throttle )
                                     self.robot.set_speeds(power_left, power_right)
                                     #print(lineError,diagSpeed, lineFollowGain)
+                                    time2UpdateLineError = time.time() + 0.05 #0.1 # only get line error at 10Hz
 
                             loopTime = (time.time() - tstart)
                             sleepTime = 0.02 - loopTime # run at 50Hz
