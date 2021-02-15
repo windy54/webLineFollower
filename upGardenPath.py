@@ -1,11 +1,37 @@
 # USAGE
-# python webstreaming.py --ip 0.0.0.0 --port 8000
+# upgardenPath.py
 
 # import the necessary packages
 #from pyimagesearch.motion_detection import SingleMotionDetector
 # this was based on pyimagesearch tutotial, I have rempved lkots of code but 
 # have not updated comments and changed function names !
+'''
 
+default image is 240 high by 320 wide
+a row is processed to find the centre
+0...................100.................160................220................319
+the centre ofthe image is pixel 120, initially only pixels from 100 to 220 are processed, i.e. a window
+120 pixels wide centred on the image. This window slides along the image according to where the centre of the line
+is. This should steer the robot around a curve.
+    wCentre = int(w/2)
+	rows2Process = [160,180,200,220]  rows that are processed to find the line centre
+	nrows2Process = len(rows2Process)
+	window2Process = 120 specifies the width of the window
+	wStartPixel = int(wCentre - window2Process/2) specifies the start point
+	rStart = [wStartPixel] * nrows2Process # create a list of nrow2Process elements - start point for each row
+then on each cycle rstart gets adjsuted according to where the centre of the line is, rduced by 10 if it is in the first
+third, increased by 10 in the last third.
+function findEdges(videoRow) processes the row and returns a list of line centres
+This function just processes a list, so the same algorithm can be used to prcess a vertical list to look for the turns.
+Left turns are ignored until there is a junctio with three options, here we must take the left turn.
+So the algorithm looks for vertical lines either side of the image centre and when it finds them turns left.
+The error is set to -1 and the window to process is biased to the left. (not yet tested!)
+Our robot does not have a compass so we cant turn through a number of degrees, have to bias window to look left
+
+The website displays the image and processed data in a strange format because I am processing a YUV image as jpeg
+also /LoopTime displays the minimum, average and maximum proessing times to determine the frame rate, with the robot running
+ seems to be 10 msecs or 100Hz.
+'''
 import yuvvideostream as yuv
 from flask import Response
 from flask import Flask
@@ -19,10 +45,11 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 
-global vs, outputFrame, lock, lineError, minLoop, maxLoop
+global vs, outputFrame, lock, lineError, minLoop, maxLoop, sumTime, sumCount
 minLoop = 10000
 maxLoop = 0
-
+sumTime = 0
+sumCount = 0
 # need to define app at bgining
 # initialize a flask object
 app = Flask(__name__)
@@ -82,7 +109,7 @@ def recentreWindow(lineCentre, oldOffset):
 def processImage(h=240,w=320,hStart=200,hEnd=240,width=200):
 	# grab global references to the video stream, output frame, and
 	# lock variables
-	global vs, outputFrame, lock, lineError, minLoop, maxLoop
+	global vs, outputFrame, lock, lineError, minLoop, maxLoop, sumTime, sumCount
 	# loop over frames from the video stream
 	# currently using masking tape which has a width of 100 pixels 40 pixels from bottom of the image
 	
@@ -96,15 +123,22 @@ def processImage(h=240,w=320,hStart=200,hEnd=240,width=200):
 	letsGo = True    
 	crossHeight = 20
 	threshold = 50
+	branchLeft = 0
+	leftTurn = 0 # variables to indicate what has been detected
+	
+	# variables for vertical line
+	rightTurn = 0
+	rowStart = 100
+	rowEnd   = 145
+	column = 60
+	rightOffset = 150
 	while letsGo:
 		startTime = time.time()
 		frame = vs.read()
-		leftTurn = 0 # variables to indicate what has been detected
 		centre = 0
-		rightTurn = 0
 		nCentres = 0
 		
-		##############
+		##############  process horizontal lines
 		for index in range(nrows2Process):
 			row = rows2Process[index]
 			
@@ -136,35 +170,46 @@ def processImage(h=240,w=320,hStart=200,hEnd=240,width=200):
 				rStart[index] = wStartPixel # have not found any lines so set to centre of image
 						
 			frame[row,rStart[index] : rEnd,1] = 250 # draw line to show area that has been processed this will be next
+		
+		# now process column
 			
-		if nCentres >0:
+		frame[rowStart:rowEnd, column, 1] = 250
+		processCol = frame[rowStart:rowEnd, column,0].copy()
+		leftLine = findEdges(processCol)
+		frame[rowStart:rowEnd, column + rightOffset, 1] = 250
+		processCol = frame[rowStart:rowEnd, column + rightOffset,0].copy()
+		rightLine = findEdges(processCol)
+		lineError = -10
+		if  leftLine and  rightLine:
+			# detected a vertical line either side of the line we are following
+			print (leftLine, rightLine)
+			frame[int(rowStart + leftLine[0]), int(column  - 5):int(column  + 5), 1] = 250
+			frame[int(rowStart + rightLine[0]), int(column + rightOffset - 5):int(column + rightOffset + 5), 1] = 250
+			# rset window to left edge
+			rStart = [20] * nrows2Process 
+			lineError = -0.9
+		elif nCentres >0:
 			lineCentre = (centre / nCentres)
-			lineError = 2 * lineCentre / width - 1
-			#frame [:, int(lineCentre), 0 ] = 250 #this line seems to screw everything up!
-			#print(rStart, centre, nCentres, width, lineError)
-		else:
-			lineError = -10
-			
+			lineError = 2 * lineCentre / width - 1		
 			
 		frame [:, wCentre, 1 ] = 250
-		#time.sleep(10)
-		#print (lineCentre, lineError, 1.0 / (time.time()-startTime))
-		
-
 
 		##############
 		# acquire the lock, set the output frame, and release the
 		# lock
 		
 		with lock:
-                        outputFrame = frame.copy()	
+			outputFrame = frame.copy()	
 		
+		# calculate loop time, then max min and sum to calculate average
 		loopTime = int( ( time.time()- startTime) * 1000)
+		sumTime += loopTime
+		sumCount+=1
 		if minLoop > loopTime:
 			minLoop = loopTime
 		if maxLoop < loopTime:
 			maxLoop = loopTime
-		#print(loopTime)	
+	
         
 
 		
@@ -204,13 +249,11 @@ def video_feed():
 def getLineError():
 	return str(lineError)
 
-@app.route('/minLoopTime', methods=['GET'])
-def getminloopTime():
-	return str(minLoop)
 
-@app.route('/maxLoopTime', methods=['GET'])
-def getmaxloopTime():
-	return str(maxLoop)
+
+@app.route('/LoopTime', methods=['GET'])
+def getloopTime():
+	return str(maxLoop) + " " + str(sumTime/sumCount) + " " + str(minLoop)
 	
 
 # check to see if this is the main thread of execution
